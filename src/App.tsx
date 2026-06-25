@@ -154,40 +154,7 @@ export default function App() {
     }
   };
 
-  const callServerProxy = async (
-    method: DivinationMethod, 
-    finalQuery: string, 
-    timeContext: string,
-    currentMeihua: any,
-    currentQimen: any,
-    chosenRole?: string
-  ) => {
-    const res = await fetch("/api/divinate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        method,
-        query: finalQuery,
-        timeContext,
-        userApiKey: apiKey,
-        model,
-        role: chosenRole || role,
-        hexagramInfo: currentMeihua,
-        qimenInfo: currentQimen,
-        customPrompts: customPrompts
-      }),
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      const staticMsg = res.status === 404 ? "。由于您使用的是 Netlify 等静态托管平台且未运行 Node 后台服务，因此内置官方通道不可用，请前往「设置」配置您的专属 API Key" : "";
-      throw new Error(errorData.error || `HTTP ${res.status}${staticMsg}`);
-    }
-    const data: DivinationResponse = await res.json();
-    if (data.error) {
-      throw new Error(data.error);
-    }
-    return data.result || "无法解析结果。";
-  };
+
 
   // Perform rolling/casting sequence for Meihua dice
   const handleMeihuaRollSequence = async () => {
@@ -397,29 +364,30 @@ ${rolePrompt}
 `;
       }
 
-      if (apiKey) {
-        const openai = new OpenAI({
-          baseURL: "https://api.deepseek.com",
-          apiKey: apiKey,
-          dangerouslyAllowBrowser: true
-        });
-
-        const completion = await openai.chat.completions.create({
-          model: model,
-          messages: [
-            { role: "system", content: systemInstruction },
-            { role: "user", content: prompt }
-          ],
-          ...(model === "deepseek-v4-pro" ? {
-            thinking: { type: "enabled" },
-            reasoning_effort: "high",
-          } : {})
-        } as any);
-
-        interpretation = completion.choices[0].message.content || "未能获取解卦结果。";
-      } else {
-        interpretation = await callServerProxy(targetItem.method, targetItem.query, targetItem.timeContext, targetItem.hexagramInfo, targetItem.qimenInfo, selectedR);
+      if (!apiKey) {
+        setActiveTab("settings");
+        throw new Error("您尚未配置您的 DeepSeek API Key。为了保障您的正常使用，已自动跳转至设置页面。请配置您的自定义 API 密钥。如尚未拥有 API Key，可点击设置中的链接前往 DeepSeek 官方开放平台获取。");
       }
+
+      const openai = new OpenAI({
+        baseURL: "https://api.deepseek.com",
+        apiKey: apiKey,
+        dangerouslyAllowBrowser: true
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          { role: "system", content: systemInstruction },
+          { role: "user", content: prompt }
+        ],
+        ...(model === "deepseek-v4-pro" ? {
+          thinking: { type: "enabled" },
+          reasoning_effort: "high",
+        } : {})
+      } as any);
+
+      interpretation = completion.choices[0].message.content || "未能获取解卦结果。";
 
       const fullyInterpretedItem: DivinationHistoryItem = {
         ...targetItem,
@@ -775,33 +743,8 @@ function SettingsPanel({
         setTestStatus("success");
         setTestMsg("DeepSeek API 密钥验证通过，连接顺畅！");
       } else {
-        const res = await fetch("/api/test-connection", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            apiKey: key,
-            model: chosenModel
-          })
-        });
-        
-        if (!res.ok) {
-          throw new Error(`服务器返回错误 ${res.status}。由于您将应用部署在 Netlify 等静态托管平台，未运行后台服务，因此内置官方通道不可用。请在上方配置您的自定义 API Key 即可顺畅解卦！`);
-        }
-        
-        let data;
-        try {
-          data = await res.json();
-        } catch (jsonErr) {
-          throw new Error("解析服务器返回的 JSON 数据失败。静态平台（如 Netlify）不支持内置后台服务，请填写您自己的 DeepSeek API Key 即可进行测试。");
-        }
-        
-        if (data && data.success) {
-          setTestStatus("success");
-          setTestMsg(data.message);
-        } else {
-          setTestStatus("error");
-          setTestMsg((data && data.error) || "连接测试失败，请重试");
-        }
+        setTestStatus("error");
+        setTestMsg("请先在上方输入您的 DeepSeek API Key 才能进行连接测试。如您没有 API Key，可前往 DeepSeek 开放平台 (https://platform.deepseek.com) 注册获取。");
       }
     } catch (err: any) {
       setTestStatus("error");
@@ -852,9 +795,14 @@ function SettingsPanel({
             />
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-0.5">
-              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+              <span className="text-[10px] text-gray-400 flex items-center gap-1.5 flex-wrap">
                 <Info className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
-                {key ? "系统将使用您的自定义 API 密钥连接 DeepSeek" : "未填写自定义密钥时，自动使用内置官方通道"}
+                <span>
+                  {key ? "系统已配置您的专属 API 密钥。" : "请先在此输入您的 DeepSeek API Key。"}
+                  <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" className="text-[#967520] underline hover:text-[#E6C15C] ml-1 font-semibold">
+                    点此前往 DeepSeek 官方开放平台获取 ↗
+                  </a>
+                </span>
               </span>
               <button
                 type="button"
