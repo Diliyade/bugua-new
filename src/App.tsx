@@ -179,7 +179,8 @@ export default function App() {
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP ${res.status}`);
+      const staticMsg = res.status === 404 ? "。由于您使用的是 Netlify 等静态托管平台且未运行 Node 后台服务，因此内置官方通道不可用，请前往「设置」配置您的专属 API Key" : "";
+      throw new Error(errorData.error || `HTTP ${res.status}${staticMsg}`);
     }
     const data: DivinationResponse = await res.json();
     if (data.error) {
@@ -782,13 +783,24 @@ function SettingsPanel({
             model: chosenModel
           })
         });
-        const data = await res.json();
-        if (data.success) {
+        
+        if (!res.ok) {
+          throw new Error(`服务器返回错误 ${res.status}。由于您将应用部署在 Netlify 等静态托管平台，未运行后台服务，因此内置官方通道不可用。请在上方配置您的自定义 API Key 即可顺畅解卦！`);
+        }
+        
+        let data;
+        try {
+          data = await res.json();
+        } catch (jsonErr) {
+          throw new Error("解析服务器返回的 JSON 数据失败。静态平台（如 Netlify）不支持内置后台服务，请填写您自己的 DeepSeek API Key 即可进行测试。");
+        }
+        
+        if (data && data.success) {
           setTestStatus("success");
           setTestMsg(data.message);
         } else {
           setTestStatus("error");
-          setTestMsg(data.error || "连接测试失败，请重试");
+          setTestMsg((data && data.error) || "连接测试失败，请重试");
         }
       }
     } catch (err: any) {
