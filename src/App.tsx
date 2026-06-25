@@ -752,21 +752,44 @@ function SettingsPanel({
     setTestStatus("loading");
     setTestMsg("");
     try {
-      const res = await fetch("/api/test-connection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      if (key) {
+        // Perform client-side verification directly to support serverless/static hosting like Netlify
+        const openai = new OpenAI({
+          baseURL: "https://api.deepseek.com",
           apiKey: key,
-          model: chosenModel
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
+          dangerouslyAllowBrowser: true
+        });
+        await openai.chat.completions.create({
+          model: chosenModel || "deepseek-v4-flash",
+          messages: [
+            { role: "user", content: "hi" }
+          ],
+          max_tokens: 10,
+          ...(chosenModel === "deepseek-v4-pro" ? {
+            thinking: { type: "enabled" },
+            reasoning_effort: "high",
+          } : {})
+        } as any);
+        
         setTestStatus("success");
-        setTestMsg(data.message);
+        setTestMsg("DeepSeek API 密钥验证通过，连接顺畅！");
       } else {
-        setTestStatus("error");
-        setTestMsg(data.error || "连接测试失败，请重试");
+        const res = await fetch("/api/test-connection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            apiKey: key,
+            model: chosenModel
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setTestStatus("success");
+          setTestMsg(data.message);
+        } else {
+          setTestStatus("error");
+          setTestMsg(data.error || "连接测试失败，请重试");
+        }
       }
     } catch (err: any) {
       setTestStatus("error");
