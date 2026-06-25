@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Settings, 
@@ -711,6 +711,17 @@ function SettingsPanel({
   const [testStatus, setTestStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [testMsg, setTestMsg] = useState("");
 
+  // Keep a ref of the latest settings to perform auto-save on unmount
+  const latestSettingsRef = useRef({ key, chosenModel, chosenRole, promptsState });
+  latestSettingsRef.current = { key, chosenModel, chosenRole, promptsState };
+
+  useEffect(() => {
+    return () => {
+      const latest = latestSettingsRef.current;
+      onSave(latest.key, latest.chosenModel, latest.chosenRole, latest.promptsState);
+    };
+  }, [onSave]);
+
   useEffect(() => {
     setTestStatus("idle");
     setTestMsg("");
@@ -722,6 +733,8 @@ function SettingsPanel({
     setTestMsg("");
     try {
       if (key) {
+        // Save immediately when testing connection
+        onSave(key, chosenModel, chosenRole, promptsState);
         // Perform client-side verification directly to support serverless/static hosting like Netlify
         const openai = new OpenAI({
           baseURL: "https://api.deepseek.com",
@@ -798,10 +811,16 @@ function SettingsPanel({
               <span className="text-[10px] text-gray-400 flex items-center gap-1.5 flex-wrap">
                 <Info className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
                 <span>
-                  {key ? "系统已配置您的专属 API 密钥。" : "请先在此输入您的 DeepSeek API Key。"}
-                  <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" className="text-[#967520] underline hover:text-[#E6C15C] ml-1 font-semibold">
-                    点此前往 DeepSeek 官方开放平台获取 ↗
-                  </a>
+                  {key ? (
+                    "系统已配置您的专属 API 密钥。"
+                  ) : (
+                    <>
+                      请先在此输入您的 DeepSeek API Key。
+                      <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" className="text-[#967520] underline hover:text-[#E6C15C] ml-1 font-semibold">
+                        点此前往 DeepSeek 官方开放平台获取 ↗
+                      </a>
+                    </>
+                  )}
                 </span>
               </span>
               <button
