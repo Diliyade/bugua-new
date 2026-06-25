@@ -1,0 +1,6 @@
+{
+  "name": "天机算卦",
+  "description": "基于奇门遁甲与梅花易数的AI解卦应用",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
