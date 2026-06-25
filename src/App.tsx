@@ -37,6 +37,7 @@ import {
   type QimenPalace, 
   type TrigramInfo 
 } from "./utils/divination";
+import { ICHING_DATA } from "./utils/ichingData";
 import type { DivinationMethod, DivinationResponse } from "./types";
 
 interface RolePromptCustom {
@@ -687,23 +688,30 @@ ${rolePrompt}
 }
 
 // Visualization of trigrams as physical lines in parchment format
-function HexagramVisualization({ upper, lower }: { upper: TrigramInfo; lower: TrigramInfo }) {
+function HexagramVisualization({ upper, lower, changeLine }: { upper: TrigramInfo; lower: TrigramInfo; changeLine?: number }) {
   const allLines = [...lower.lines, ...upper.lines]; // bottom to top
   return (
-    <div className="flex flex-col gap-1 w-14 items-center justify-center py-2.5 bg-white rounded-lg border border-gray-100 shadow-sm">
-      {allLines.slice().reverse().map((isSolid, idx) => (
-        <div key={idx} className="w-10 h-1.5 flex justify-between items-center">
-          {isSolid ? (
-            <div className="w-full h-full bg-gradient-to-r from-[#967520] to-[#E6C15C] rounded-sm" />
-          ) : (
-            <>
-              <div className="w-[42%] h-full bg-gradient-to-r from-[#967520] to-[#E6C15C] rounded-sm" />
-              <div className="w-[16%] h-full" />
-              <div className="w-[42%] h-full bg-gradient-to-r from-[#967520] to-[#E6C15C] rounded-sm" />
-            </>
-          )}
-        </div>
-      ))}
+    <div className="relative flex flex-col gap-1 w-14 items-center justify-center py-2.5 bg-white rounded-lg border border-gray-100 shadow-sm">
+      {allLines.slice().reverse().map((isSolid, idx) => {
+        const lineNum = 6 - idx; // 1-indexed from bottom
+        const isChanging = changeLine === lineNum;
+        return (
+          <div key={idx} className="relative w-10 h-1.5 flex justify-between items-center">
+            {isSolid ? (
+              <div className="w-full h-full bg-gradient-to-r from-[#967520] to-[#E6C15C] rounded-sm" />
+            ) : (
+              <>
+                <div className="w-[42%] h-full bg-gradient-to-r from-[#967520] to-[#E6C15C] rounded-sm" />
+                <div className="w-[16%] h-full" />
+                <div className="w-[42%] h-full bg-gradient-to-r from-[#967520] to-[#E6C15C] rounded-sm" />
+              </>
+            )}
+            {isChanging && (
+              <div className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-gradient-to-r from-[#967520] to-[#E6C15C] shadow-[0_0_6px_rgba(230,193,92,0.8)] animate-pulse" />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1243,34 +1251,88 @@ function HistoryDetailModal({
           </div>
 
           {/* Render Saved Visual Representation exclusively in correct tab to avoid mix-up */}
-          {item.method === "meihua" && item.hexagramInfo && (
-            <div className="bg-[#FAF9F5] p-4 rounded-2xl border border-gray-200">
-              <h4 className="text-xs font-bold text-gray-800 mb-3 flex items-center gap-1">
-                <span className="w-1 h-3 bg-[#E6C15C] rounded-full inline-block" />
-                梅花易数卦象 (本、互、变卦)
-              </h4>
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] text-gray-400 mb-1">本卦</span>
-                  <HexagramVisualization upper={item.hexagramInfo.baseUpper} lower={item.hexagramInfo.baseLower} />
-                  <span className="text-xs font-bold text-gray-800 mt-2">{item.hexagramInfo.baseName}</span>
+          {item.method === "meihua" && item.hexagramInfo && (() => {
+            const hexText = ICHING_DATA[item.hexagramInfo.baseName];
+            const yaoText = hexText ? hexText.yaos[item.hexagramInfo.changeLine - 1] : "";
+            const guaciText = hexText ? hexText.judgment : "";
+            
+            let yaoLabel = `第 ${item.hexagramInfo.changeLine} 爻`;
+            let yaoContent = yaoText;
+            if (yaoText && yaoText.includes("：")) {
+              const parts = yaoText.split("：");
+              yaoLabel = parts[0];
+              yaoContent = parts[1];
+            }
+            
+            return (
+              <>
+                <div className="bg-[#FAF9F5] p-4 rounded-2xl border border-gray-200">
+                  <h4 className="text-xs font-bold text-gray-800 mb-3 flex items-center gap-1">
+                    <span className="w-1 h-3 bg-[#E6C15C] rounded-full inline-block" />
+                    梅花易数卦象 (本、互、变卦)
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-gray-400 mb-1">本卦</span>
+                      <HexagramVisualization 
+                        upper={item.hexagramInfo.baseUpper} 
+                        lower={item.hexagramInfo.baseLower} 
+                        changeLine={item.hexagramInfo.changeLine} 
+                      />
+                      <span className="text-xs font-bold text-gray-800 mt-2">{item.hexagramInfo.baseName}</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-gray-400 mb-1">互卦</span>
+                      <HexagramVisualization upper={item.hexagramInfo.mutualUpper} lower={item.hexagramInfo.mutualLower} />
+                      <span className="text-xs font-bold text-gray-800 mt-2">{item.hexagramInfo.mutualName}</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-gray-400 mb-1">变卦</span>
+                      <HexagramVisualization upper={item.hexagramInfo.changeUpper} lower={item.hexagramInfo.changeLower} />
+                      <span className="text-xs font-bold text-gray-800 mt-2">{item.hexagramInfo.changeName}</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-3 text-center">
+                    动爻在第 <strong className="text-[#967520]">{item.hexagramInfo.changeLine}</strong> 爻
+                  </div>
                 </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] text-gray-400 mb-1">互卦</span>
-                  <HexagramVisualization upper={item.hexagramInfo.mutualUpper} lower={item.hexagramInfo.mutualLower} />
-                  <span className="text-xs font-bold text-gray-800 mt-2">{item.hexagramInfo.mutualName}</span>
-                </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] text-gray-400 mb-1">变卦</span>
-                  <HexagramVisualization upper={item.hexagramInfo.changeUpper} lower={item.hexagramInfo.changeLower} />
-                  <span className="text-xs font-bold text-gray-800 mt-2">{item.hexagramInfo.changeName}</span>
-                </div>
-              </div>
-              <div className="text-[10px] text-gray-400 mt-3 text-center">
-                动爻在第 <strong className="text-[#967520]">{item.hexagramInfo.changeLine}</strong> 爻
-              </div>
-            </div>
-          )}
+
+                {/* 动爻指引 Card */}
+                {yaoText && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-white p-5 rounded-2xl border border-gray-150/80 shadow-sm space-y-2 text-left"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#967520]">
+                      <span className="w-1.5 h-3 bg-[#967520] rounded-full inline-block" />
+                      <span>动爻指引</span>
+                      <span className="ml-1 px-1.5 py-0.5 bg-[#967520]/10 text-[10px] rounded text-[#967520] font-mono font-bold">{yaoLabel}</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-800 leading-relaxed font-sans">{yaoContent}</p>
+                  </motion.div>
+                )}
+
+                {/* 卦辞 Card */}
+                {guaciText && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-white p-5 rounded-2xl border border-gray-150/80 shadow-sm space-y-2 text-left"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#967520]">
+                      <span className="w-1.5 h-3 bg-[#E6C15C] rounded-full inline-block" />
+                      <span>卦辞</span>
+                      <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-[10px] rounded text-gray-500 font-bold">{item.hexagramInfo.baseName}</span>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700 leading-relaxed font-sans">{guaciText}</p>
+                  </motion.div>
+                )}
+              </>
+            );
+          })()}
 
           {item.method === "qimen" && item.qimenInfo && (
             <div className="bg-[#FAF9F5] p-4 rounded-2xl border border-gray-200">

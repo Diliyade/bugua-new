@@ -155,39 +155,43 @@ export default function BaguaWheel() {
 
       const taijiR = r * 0.42;
 
-      // Outer gold rim for Taiji
+      // Outer boundary and background for Taiji (Black fish base)
       ctx.beginPath();
       ctx.arc(0, 0, taijiR, 0, Math.PI * 2);
-      ctx.fillStyle = "#111"; // Black fish base
+      ctx.fillStyle = "#161618";
       ctx.fill();
+      
+      // Thin, elegant gold stroke around the Taiji outer boundary
+      ctx.strokeStyle = "rgba(212, 175, 55, 0.45)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
 
-      // White/Gold fish half
-      ctx.beginPath();
-      ctx.arc(0, 0, taijiR, -Math.PI / 2, Math.PI / 2, false);
-      ctx.bezierCurveTo(taijiR / 2, taijiR, -taijiR / 2, 0, 0, -taijiR);
+      // Create Gold Gradient
       const goldGrad = ctx.createLinearGradient(0, -taijiR, 0, taijiR);
       goldGrad.addColorStop(0, "#E6C15C");
       goldGrad.addColorStop(1, "#967520");
+
+      // Draw mathematically perfect Gold Fish half
+      ctx.beginPath();
+      // Left outer half of the big circle (counter-clockwise)
+      ctx.arc(0, 0, taijiR, -Math.PI / 2, Math.PI / 2, true);
+      // Lower inner curve (counter-clockwise)
+      ctx.arc(0, taijiR / 2, taijiR / 2, Math.PI / 2, -Math.PI / 2, true);
+      // Upper inner curve (clockwise)
+      ctx.arc(0, -taijiR / 2, taijiR / 2, Math.PI / 2, -Math.PI / 2, false);
       ctx.fillStyle = goldGrad;
       ctx.fill();
 
-      // Black fish curve correction
-      ctx.beginPath();
-      ctx.arc(0, 0, taijiR, Math.PI / 2, -Math.PI / 2, false);
-      ctx.bezierCurveTo(-taijiR / 2, -taijiR, taijiR / 2, 0, 0, taijiR);
-      ctx.fillStyle = "#161618";
-      ctx.fill();
-
-      // White/Gold small circle eye
-      ctx.beginPath();
-      ctx.arc(0, taijiR / 2, taijiR / 6, 0, Math.PI * 2);
-      ctx.fillStyle = "#161618";
-      ctx.fill();
-
-      // Black small circle eye
+      // Draw Top Eye (inside Gold bulb - Black eye)
       ctx.beginPath();
       ctx.arc(0, -taijiR / 2, taijiR / 6, 0, Math.PI * 2);
-      ctx.fillStyle = "#E6C15C";
+      ctx.fillStyle = "#161618";
+      ctx.fill();
+
+      // Draw Bottom Eye (inside Black bulb - Gold eye)
+      ctx.beginPath();
+      ctx.arc(0, taijiR / 2, taijiR / 6, 0, Math.PI * 2);
+      ctx.fillStyle = goldGrad;
       ctx.fill();
 
       ctx.restore();
