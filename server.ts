@@ -5,6 +5,13 @@ import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import fs from "fs/promises";
 
+const getDeepSeekActualModel = (m?: string) => {
+  if (m === "deepseek-v4-pro" || m === "deepseek-reasoner") {
+    return "deepseek-reasoner";
+  }
+  return "deepseek-chat";
+};
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -42,9 +49,7 @@ async function startServer() {
       if (method === "meihua") {
         systemInstruction = `
 你是一位精通中国传统易学数术【梅花易数】的殿堂级宗师。
-现在，请根据用户的起卦时空与心中所求，为您进行深度且具象的梅花易数解卦。
-
-【重要：本次解卦采用的术数是：梅花易数】
+【重要学术原则：严谨依卦推演，严禁虚构妄断】
 【绝对禁止混淆：不要提及任何奇门遁甲概念（如九宫、八神、九星、八门、值符值使、三奇六仪等）。仅采用易经体用五行生克、八卦卦象、本卦、互卦、变卦、卦辞、动爻进行预测解卦。】
 
 当前解卦大师设定：
@@ -61,9 +66,10 @@ async function startServer() {
 ---
 
 请严格遵照上述【解卦大师设定】进行解卦，回答必须使用 Markdown 格式。包含：
-1. 本卦、互卦、变卦的卦象五行体用总论。
-2. 针对求问事宜进行深刻细节解读（体用关系如何显示当前处境、发展变数及未来最终结果）。
-3. 给出实用的、富有人生智慧的卦象化解建议与改运吉凶指引。
+1. **【卦象总断与体用生克】**：本卦、互卦、变卦的卦象五行体用总论。
+2. **【动爻爻辞精解】**：针对动爻进行深刻细节解读（体用关系如何显示当前处境、发展变数及未来最终结果）。
+3. **【事态演进与变卦终局】**：事情推进过程中的暗流与最终走向。
+4. **【趋吉避凶与开运指引】**：给出实用的、富有人生智慧的卦象化解建议与改运吉凶指引。
 `;
 
         prompt = `
@@ -79,9 +85,7 @@ async function startServer() {
         // Qimen Dunjia
         systemInstruction = `
 你是一位精通中国传统易学数术【奇门遁甲】的殿堂级宗师。
-现在，请根据用户的起卦时空与心中所求，为您进行深度且具象的奇门遁甲解盘。
-
-【重要：本次解卦采用的术数是：奇门遁甲】
+【重要学术原则：严谨依盘推演，严禁虚构妄断】
 【绝对禁止混淆：不要提及任何梅花易数概念（如本卦、互卦、变卦、体卦用卦、动爻等）。仅采用奇门遁甲九宫生克、天盘地盘、神星门仪组合生克、值符值使进行预测解盘。】
 
 当前解卦大师设定：
@@ -96,9 +100,10 @@ async function startServer() {
 ---
 
 请严格遵照上述【解卦大师设定】进行解卦，回答必须使用 Markdown 格式。包含：
-1. 奇门盘面时令总评、值符值使落宫吉凶。
-2. 盘面核心用神细节解读（神星门仪组合生克关系，分析事情的当前阻碍、推进趋势 and 未来结论）。
-3. 针对求问疑惑提供明确的行为指引、有利时空方位与开运趋避建议。
+1. **【奇门大局与时令总评】**：奇门盘面时令总评、值符值使落宫吉凶。
+2. **【用神落宫与生克透视】**：盘面核心用神细节解读（神星门仪组合生克关系，分析事情的当前阻碍、推进趋势和未来结论）。
+3. **【吉凶断语与未来走势】**：事情后续发展演变与最终定局。
+4. **【开运方位与时空趋避指南】**：针对求问疑惑提供明确的行为指引、有利时空方位与开运趋避建议。
 `;
 
         prompt = `
@@ -121,14 +126,17 @@ async function startServer() {
             apiKey: userApiKey,
           });
 
+          const actualModel = getDeepSeekActualModel(model);
+          const isReasoner = actualModel === "deepseek-reasoner";
+
           const completion = await openai.chat.completions.create({
-            model: model || "deepseek-v4-flash",
+            model: actualModel,
             messages: [
               { role: "system", content: systemInstruction },
               { role: "user", content: prompt }
             ],
-            // For DeepSeek models supporting thinking
-            ...(model === "deepseek-v4-pro" ? {
+            temperature: 0.6,
+            ...(isReasoner ? {
               thinking: { type: "enabled" },
               reasoning_effort: "high",
             } : {})
@@ -175,13 +183,16 @@ async function startServer() {
           baseURL: "https://api.deepseek.com",
           apiKey: apiKey,
         });
+        const actualModel = getDeepSeekActualModel(model);
+        const isReasoner = actualModel === "deepseek-reasoner";
+
         const completion = await openai.chat.completions.create({
-          model: model || "deepseek-v4-flash",
+          model: actualModel,
           messages: [
             { role: "user", content: "hi" }
           ],
           max_tokens: 10,
-          ...(model === "deepseek-v4-pro" ? {
+          ...(isReasoner ? {
             thinking: { type: "enabled" },
             reasoning_effort: "high",
           } : {})
@@ -189,21 +200,7 @@ async function startServer() {
         const reply = completion.choices[0]?.message?.content || "";
         return res.json({ success: true, message: "DeepSeek API 密钥验证通过，连接顺畅！", reply });
       } else {
-        // Test Gemini (Server side)
-        const serverGeminiKey = process.env.GEMINI_API_KEY;
-        if (!serverGeminiKey) {
-          return res.status(401).json({ success: false, error: "未配置全局默认 API 密钥，且未填写自定义密钥。" });
-        }
-        const ai = new GoogleGenAI({ apiKey: serverGeminiKey });
-        const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: "hi",
-          config: {
-            maxOutputTokens: 10
-          }
-        });
-        const reply = response.text || "";
-        return res.json({ success: true, message: "默认 Gemini 官方通道连接测试成功！", reply });
+        return res.status(400).json({ success: false, error: "未提供 API Key，请在上方填写您的 DeepSeek API Key。" });
       }
     } catch (err: any) {
       console.error("Test connection failed:", err);

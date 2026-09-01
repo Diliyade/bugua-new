@@ -1,5 +1,6 @@
 // Traditional Divination Calculator for Meihua Yishu & Qimen Dunjia
 import { Lunar, Solar } from "lunar-javascript";
+import { ICHING_DATA } from "./ichingData";
 
 export interface TrigramInfo {
   name: string;
@@ -680,4 +681,112 @@ export function getCustomJieQi(yyyy: number, mm: number, dd: number): string {
   }
 
   return cn24Days[jqidx2];
+}
+
+export interface MeihuaAnalysisContext {
+  tiTrigram: TrigramInfo;
+  yongTrigram: TrigramInfo;
+  tiPosition: string;
+  yongPosition: string;
+  changeYongTrigram: TrigramInfo;
+  baseRelation: string;
+  changeRelation: string;
+  movingYaoText: string;
+  baseJudgment: string;
+  changeJudgment: string;
+}
+
+export function getMeihuaDetailedPromptContext(hexInfo: MeihuaResult): MeihuaAnalysisContext {
+  const isLowerMoving = hexInfo.changeLine <= 3;
+  const tiTrigram = isLowerMoving ? hexInfo.baseUpper : hexInfo.baseLower;
+  const yongTrigram = isLowerMoving ? hexInfo.baseLower : hexInfo.baseUpper;
+  const tiPosition = isLowerMoving ? "上卦" : "下卦";
+  const yongPosition = isLowerMoving ? "下卦" : "上卦";
+
+  const changeYongTrigram = isLowerMoving ? hexInfo.changeLower : hexInfo.changeUpper;
+
+  const getRelation = (tiElem: string, yongElem: string) => {
+    if (tiElem === yongElem) return "【体用比和】（体卦与用卦五行同类，主同道相合、诸事平顺、大吉）";
+    // Generates
+    if ((yongElem === "木" && tiElem === "火") ||
+        (yongElem === "火" && tiElem === "土") ||
+        (yongElem === "土" && tiElem === "金") ||
+        (yongElem === "金" && tiElem === "水") ||
+        (yongElem === "水" && tiElem === "木")) {
+      return "【用生体】（用卦五行生体卦五行，主得贵人相助、谋事顺遂、吉庆有余、大吉）";
+    }
+    if ((tiElem === "木" && yongElem === "火") ||
+        (tiElem === "火" && yongElem === "土") ||
+        (tiElem === "土" && yongElem === "金") ||
+        (tiElem === "金" && yongElem === "水") ||
+        (tiElem === "水" && yongElem === "木")) {
+      return "【体生用】（体卦五行生用卦五行，主自身多付出、劳心费神、耗泄精力，终虽有所成但防身心疲惫）";
+    }
+    // Overcomes
+    if ((tiElem === "金" && yongElem === "木") ||
+        (tiElem === "木" && yongElem === "土") ||
+        (tiElem === "土" && yongElem === "水") ||
+        (tiElem === "水" && yongElem === "火") ||
+        (tiElem === "火" && yongElem === "金")) {
+      return "【体克用】（体卦五行克用卦五行，主事有阻力但自身能制胜、迎难而上终获成功、小吉）";
+    }
+    if ((yongElem === "金" && tiElem === "木") ||
+        (yongElem === "木" && tiElem === "土") ||
+        (yongElem === "土" && tiElem === "水") ||
+        (yongElem === "水" && tiElem === "火") ||
+        (yongElem === "火" && tiElem === "金")) {
+      return "【用克体】（用卦五行克体卦五行，主外部压力大、事情受阻受压制、防损耗破败、不利）";
+    }
+    return "生克相济";
+  };
+
+  const baseRelation = getRelation(tiTrigram.element, yongTrigram.element);
+  const changeRelation = getRelation(tiTrigram.element, changeYongTrigram.element);
+
+  const baseHexData = ICHING_DATA[hexInfo.baseName];
+  const changeHexData = ICHING_DATA[hexInfo.changeName];
+
+  const movingYaoText = baseHexData?.yaos ? baseHexData.yaos[hexInfo.changeLine - 1] || "" : "";
+  const baseJudgment = baseHexData ? baseHexData.judgment : "";
+  const changeJudgment = changeHexData ? changeHexData.judgment : "";
+
+  return {
+    tiTrigram,
+    yongTrigram,
+    tiPosition,
+    yongPosition,
+    changeYongTrigram,
+    baseRelation,
+    changeRelation,
+    movingYaoText,
+    baseJudgment,
+    changeJudgment
+  };
+}
+
+export function getQimenDetailedPromptContext(qimenInfo: QimenResult) {
+  const palaces = qimenInfo.palaces || [];
+  const dayStem = qimenInfo.bazi?.day ? qimenInfo.bazi.day[0] : "";
+  const hourStem = qimenInfo.bazi?.hour ? qimenInfo.bazi.hour[0] : "";
+
+  const dayPalace = palaces.find(p => p.stemHeaven === dayStem);
+  const hourPalace = palaces.find(p => p.stemHeaven === hourStem);
+  const zhifuPalace = palaces.find(p => p.star === qimenInfo.zhifuStar || p.god === "值符");
+  const zhishiPalace = palaces.find(p => p.gate === qimenInfo.zhishiGate);
+
+  const kaiPalace = palaces.find(p => p.gate === "开门");
+  const xiuPalace = palaces.find(p => p.gate === "休门");
+  const shengPalace = palaces.find(p => p.gate === "生门");
+
+  return {
+    dayStem,
+    hourStem,
+    dayPalace,
+    hourPalace,
+    zhifuPalace,
+    zhishiPalace,
+    kaiPalace,
+    xiuPalace,
+    shengPalace
+  };
 }

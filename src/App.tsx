@@ -18,7 +18,12 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertCircle,
-  Wifi
+  Wifi,
+  MessageSquare,
+  Send,
+  Copy,
+  Check,
+  RotateCcw
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { Lunar, Solar } from "lunar-javascript";
@@ -30,6 +35,8 @@ import {
   calculateMeihua, 
   calculateMeihuaByDice, 
   calculateQimen, 
+  getMeihuaDetailedPromptContext, 
+  getQimenDetailedPromptContext,
   TRIGRAMS, 
   getCustomJieQi,
   getPreciseJieQi,
@@ -38,7 +45,14 @@ import {
   type TrigramInfo 
 } from "./utils/divination";
 import { ICHING_DATA } from "./utils/ichingData";
-import type { DivinationMethod, DivinationResponse } from "./types";
+import type { DivinationMethod, DivinationResponse, FollowUpMessage } from "./types";
+
+export const getDeepSeekActualModel = (m: string) => {
+  if (m === "deepseek-v4-pro" || m === "deepseek-reasoner") {
+    return "deepseek-reasoner";
+  }
+  return "deepseek-chat";
+};
 
 interface RolePromptCustom {
   personality: string;
@@ -76,6 +90,7 @@ interface DivinationHistoryItem {
   hexagramInfo?: MeihuaResult;
   qimenInfo?: ReturnType<typeof calculateQimen>;
   role?: string;
+  followUps?: FollowUpMessage[];
 }
 
 export default function App() {
@@ -97,6 +112,7 @@ export default function App() {
   });
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
   
   // Meihua Dice Roll state
   const [isRollingDice, setIsRollingDice] = useState(false);
@@ -282,10 +298,18 @@ export default function App() {
   const interpretDivination = async (targetItem: DivinationHistoryItem, chosenRole?: string) => {
     if (loading) return;
     setLoading(true);
+    const selectedR = chosenRole || role;
+
+    // Show initial in-progress state immediately for instant feedback
+    const inProgressItem: DivinationHistoryItem = {
+      ...targetItem,
+      result: "",
+      role: selectedR
+    };
+    setSelectedHistory(inProgressItem);
+    setHistoryList(prev => prev.map(h => h.id === targetItem.id ? inProgressItem : h));
+
     try {
-      let interpretation = "";
-      
-      const selectedR = chosenRole || role;
       const targetPrompt = customPrompts[selectedR as keyof typeof customPrompts] || customPrompts.default;
       const rolePrompt = `
 当前解卦大师设定：
@@ -297,28 +321,37 @@ export default function App() {
       let prompt = "";
 
       if (targetItem.method === "meihua") {
+        const hex = targetItem.hexagramInfo;
+        const analysis = hex ? getMeihuaDetailedPromptContext(hex) : null;
+
         systemInstruction = `
 你是一位精通中国传统易学数术【梅花易数】的殿堂级宗师。
-现在，请根据用户的起卦时空与心中所求，为您进行深度且具象的梅花易数解卦。
-
-【重要：本次解卦采用的术数是：梅花易数】
+【重要学术原则：严谨依卦推演，严禁虚构妄断】
 【绝对禁止混淆：不要提及任何奇门遁甲概念（如九宫、八神、九星、八门、值符值使、三奇六仪等）。仅采用易经体用五行生克、八卦卦象、本卦、互卦、变卦、卦辞、动爻进行预测解卦。】
+
+【梅花易数客观推导核心铁律数据】：
+1. 本卦：【${hex?.baseName || '待定'}】
+   - 体卦（代表求测者自身/主体）：${analysis?.tiPosition || '待定'}【${analysis?.tiTrigram?.name || ''}（五行属${analysis?.tiTrigram?.element || ''}）】
+   - 用卦（代表所测之事/外部客体）：${analysis?.yongPosition || '待定'}【${analysis?.yongTrigram?.name || ''}（五行属${analysis?.yongTrigram?.element || ''}）】
+   - 本卦体用生克定性：${analysis?.baseRelation || '待定'}
+   - 本卦周易卦辞：《周易》卦辞曰：“${analysis?.baseJudgment || ''}”
+2. 动爻（第 ${hex?.changeLine || '0'} 爻动）：
+   - 权威动爻爻辞：“${analysis?.movingYaoText || ''}”
+   - 动爻指引：请将此爻辞作为洞察事态演变与行动契机的核心切入点。
+3. 互卦（代表事情推进的中途过程与暗流）：【${hex?.mutualName || '待定'}】（上卦${hex?.mutualUpper?.name || ''}${hex?.mutualUpper?.element || ''}，下卦${hex?.mutualLower?.name || ''}${hex?.mutualLower?.element || ''}）
+4. 变卦（代表事情发展的最终结局与归宿）：【${hex?.changeName || '待定'}】
+   - 变卦体卦仍为：【${analysis?.tiTrigram?.name || ''}（五行属${analysis?.tiTrigram?.element || ''}）】
+   - 变卦用卦变为：【${analysis?.changeYongTrigram?.name || ''}（五行属${analysis?.changeYongTrigram?.element || ''}）】
+   - 变卦终局生克定性：${analysis?.changeRelation || '待定'}
+   - 变卦周易卦辞：《周易》卦辞曰：“${analysis?.changeJudgment || ''}”
 
 ${rolePrompt}
 
-起卦推演核心参考数据：
----
-梅花易数起卦分析数据：
-本卦: ${targetItem.hexagramInfo?.baseName || '待定'}（上卦: ${targetItem.hexagramInfo?.baseUpper?.name || ''}${targetItem.hexagramInfo?.baseUpper?.element || ''}，下卦: ${targetItem.hexagramInfo?.baseLower?.name || ''}${targetItem.hexagramInfo?.baseLower?.element || ''}）
-互卦: ${targetItem.hexagramInfo?.mutualName || '待定'}（上卦: ${targetItem.hexagramInfo?.mutualUpper?.name || ''}${targetItem.hexagramInfo?.mutualUpper?.element || ''}，下卦: ${targetItem.hexagramInfo?.mutualLower?.name || ''}${targetItem.hexagramInfo?.mutualLower?.element || ''}）
-变卦: ${targetItem.hexagramInfo?.changeName || '待定'}（上卦: ${targetItem.hexagramInfo?.changeUpper?.name || ''}${targetItem.hexagramInfo?.changeUpper?.element || ''}，下卦: ${targetItem.hexagramInfo?.changeLower?.name || ''}${targetItem.hexagramInfo?.changeLower?.element || ''}）
-动爻: 第 ${targetItem.hexagramInfo?.changeLine || '0'} 爻动
----
-
-请严格遵照上述【解卦大师设定】进行解卦，回答必须使用 Markdown 格式。包含：
-1. 本卦、互卦、变卦的卦象五行体用总论。
-2. 针对求问事宜进行深刻细节解读（体用关系如何显示当前处境、发展变数及未来最终结果）。
-3. 给出实用的、富有人生智慧的卦象化解建议与改运吉凶指引。
+请严格遵照上述【解卦大师设定】进行解卦，回答必须使用 Markdown 格式，条理清晰，包含：
+1. **【卦象总断与体用生克】**：明确指出体卦（${analysis?.tiTrigram?.name || ''}${analysis?.tiTrigram?.element || ''}）与用卦（${analysis?.yongTrigram?.name || ''}${analysis?.yongTrigram?.element || ''}）的生克关系（${analysis?.baseRelation || ''}），定下吉凶大纲。
+2. **【动爻爻辞精解】**：紧扣动爻爻辞“${analysis?.movingYaoText || ''}”，点破求测者当前所处阶段与破局关键。
+3. **【事态演进与变卦终局】**：结合互卦【${hex?.mutualName || ''}】的过程推演与变卦【${hex?.changeName || ''}】（${analysis?.changeRelation || ''}），剖析事情推进中的阻碍、助力与最终定局。
+4. **【趋吉避凶与开运指引】**：结合体卦五行（${analysis?.tiTrigram?.element || ''}）与卦象哲理，给出务实、有智慧的人生建议与开运策略。
 `;
 
         prompt = `
@@ -327,31 +360,35 @@ ${rolePrompt}
 时令时空: ${targetItem.timeContext}
 求问事宜: ${targetItem.query}
 
-请为我进行深度起卦推演与解卦分析。
+请基于上述推导铁律，为我进行深度起卦推演与解卦分析。
 `;
 
       } else {
         // Qimen Dunjia
+        const qimen = targetItem.qimenInfo;
+        const qAnalysis = qimen ? getQimenDetailedPromptContext(qimen) : null;
+
         systemInstruction = `
 你是一位精通中国传统易学数术【奇门遁甲】的殿堂级宗师。
-现在，请根据用户的起卦时空与心中所求，为您进行深度且具象的奇门遁甲解盘。
-
-【重要：本次解卦采用的术数是：奇门遁甲】
+【重要学术原则：严谨依盘推演，严禁虚构妄断】
 【绝对禁止混淆：不要提及任何梅花易数概念（如本卦、互卦、变卦、体卦用卦、动爻等）。仅采用奇门遁甲九宫生克、天盘地盘、神星门仪组合生克、值符值使进行预测解盘。】
+
+【奇门遁甲客观排盘核心参考数据】：
+- 时令与格局: ${qimen?.dunInfo || '待定'}
+- 四柱干支: 年柱[${qimen?.bazi?.year || ''}] 月柱[${qimen?.bazi?.month || ''}] 日柱[${qimen?.bazi?.day || ''}] 时柱[${qimen?.bazi?.hour || ''}]
+- 日干（代表求测者自身）: [${qAnalysis?.dayStem || ''}]，落宫: [${qAnalysis?.dayPalace?.name || ''}${qAnalysis?.dayPalace?.direction || ''}（五行属${qAnalysis?.dayPalace?.element || ''}），临${qAnalysis?.dayPalace?.gate || ''}、${qAnalysis?.dayPalace?.star || ''}、${qAnalysis?.dayPalace?.god || ''}]
+- 时干（代表所求测之事体）: [${qAnalysis?.hourStem || ''}]，落宫: [${qAnalysis?.hourPalace?.name || ''}${qAnalysis?.hourPalace?.direction || ''}（五行属${qAnalysis?.hourPalace?.element || ''}），临${qAnalysis?.hourPalace?.gate || ''}、${qAnalysis?.hourPalace?.star || ''}、${qAnalysis?.hourPalace?.god || ''}]
+- 值符（大将所居首领）: ${qimen?.zhifuStar || ''}落[${qAnalysis?.zhifuPalace?.name || ''}]；值使（执行使者）: ${qimen?.zhishiGate || ''}落[${qAnalysis?.zhishiPalace?.name || ''}]
+- 三吉门落位: 开门在[${qAnalysis?.kaiPalace?.name || ''}]，休门在[${qAnalysis?.xiuPalace?.name || ''}]，生门在[${qAnalysis?.shengPalace?.name || ''}]
+- 九宫全盘明细: ${JSON.stringify(qimen?.palaces || [])}
 
 ${rolePrompt}
 
-起卦推演核心参考数据：
----
-奇门遁甲排盘分析数据：
-时令参数: ${targetItem.qimenInfo?.dunInfo || '待定'}
-九宫格各宫落位参数: ${JSON.stringify(targetItem.qimenInfo?.palaces || [])}
----
-
-请严格遵照上述【解卦大师设定】进行解卦，回答必须使用 Markdown 格式。包含：
-1. 奇门盘面时令总评、值符值使落宫吉凶。
-2. 盘面核心用神细节解读（神星门仪组合生克关系，分析事情的当前阻碍、推进趋势和未来结论）。
-3. 针对求问疑惑提供明确的行为指引、有利时空方位与开运趋避建议。
+请严格遵照上述【解卦大师设定】进行解卦，回答必须使用 Markdown 格式，包含：
+1. **【奇门大局与时令总评】**：分析时令局数与值符值使落宫格局吉凶。
+2. **【用神落宫与生克透视】**：对比日干（求测者）与时干（事体）落宫的五行生克及神星门仪组合，剖析当前处境与阻力所在。
+3. **【吉凶断语与未来走势】**：依据三吉门与格局变化，指明事情后续发展演变趋势与最终结果。
+4. **【开运方位与时空趋避指南】**：提供明确的有利方位、避凶策略与行动时机建议。
 `;
 
         prompt = `
@@ -375,38 +412,275 @@ ${rolePrompt}
         dangerouslyAllowBrowser: true
       });
 
-      const completion = await openai.chat.completions.create({
-        model: model,
+      const actualModel = getDeepSeekActualModel(model);
+      const isReasoner = actualModel === "deepseek-reasoner";
+
+      const stream: any = await openai.chat.completions.create({
+        model: actualModel,
         messages: [
           { role: "system", content: systemInstruction },
           { role: "user", content: prompt }
         ],
-        ...(model === "deepseek-v4-pro" ? {
+        stream: true,
+        temperature: 0.6,
+        ...(isReasoner ? {
           thinking: { type: "enabled" },
           reasoning_effort: "high",
         } : {})
       } as any);
 
-      interpretation = completion.choices[0].message.content || "未能获取解卦结果。";
+      let accumulated = "";
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || "";
+        accumulated += delta;
 
-      const fullyInterpretedItem: DivinationHistoryItem = {
+        const liveItem: DivinationHistoryItem = {
+          ...targetItem,
+          result: accumulated,
+          role: selectedR
+        };
+        setSelectedHistory(liveItem);
+        setHistoryList(prev => prev.map(h => h.id === targetItem.id ? liveItem : h));
+      }
+
+      const finalItem: DivinationHistoryItem = {
         ...targetItem,
-        result: interpretation,
+        result: accumulated || "未能获取解卦结果。",
         role: selectedR
       };
-
-      setSelectedHistory(fullyInterpretedItem);
-
-      // Persist permanently in local historical log
-      const updatedHistory = historyList.map(h => h.id === targetItem.id ? fullyInterpretedItem : h);
+      setSelectedHistory(finalItem);
+      const updatedHistory = historyList.map(h => h.id === targetItem.id ? finalItem : h);
       setHistoryList(updatedHistory);
       localStorage.setItem("divination_history", JSON.stringify(updatedHistory));
 
     } catch (err: any) {
       alert(`解卦推算失败: ${err.message || "未知错误"}`);
+      setSelectedHistory(targetItem);
+      setHistoryList(prev => prev.map(h => h.id === targetItem.id ? targetItem : h));
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle in-depth follow-up questioning based on current divination
+  const handleFollowUp = async (targetItem: DivinationHistoryItem, question: string) => {
+    if (!question.trim() || followUpLoading || loading) return;
+    
+    if (!apiKey) {
+      setActiveTab("settings");
+      alert("您尚未配置 DeepSeek API Key，已自动跳转至设置页面。请配置您的自定义 API 密钥后再进行追问。");
+      return;
+    }
+
+    const selectedR = targetItem.role || role;
+    const targetPrompt = customPrompts[selectedR as keyof typeof customPrompts] || customPrompts.default;
+    const rolePrompt = `
+当前解卦大师设定：
+- 角色性格：${targetPrompt.personality}
+- 说话语气与解盘逻辑：${targetPrompt.style}
+`;
+
+    let systemInstruction = "";
+    if (targetItem.method === "meihua") {
+      const hex = targetItem.hexagramInfo;
+      const analysis = hex ? getMeihuaDetailedPromptContext(hex) : null;
+      systemInstruction = `
+你是一位精通中国传统易学数术【梅花易数】的殿堂级宗师。
+【重要学术原则：严谨依卦推演，严禁虚构妄断】
+【绝对禁止混淆：不要提及任何奇门遁甲概念。仅采用易经体用五行生克、八卦卦象、本卦、互卦、变卦、卦辞、动爻进行预测解卦。】
+
+【梅花易数客观推导核心铁律数据】：
+1. 本卦：【${hex?.baseName || '待定'}】
+   - 体卦（代表求测者自身/主体）：${analysis?.tiPosition || '待定'}【${analysis?.tiTrigram?.name || ''}（五行属${analysis?.tiTrigram?.element || ''}）】
+   - 用卦（代表所测之事/外部客体）：${analysis?.yongPosition || '待定'}【${analysis?.yongTrigram?.name || ''}（五行属${analysis?.yongTrigram?.element || ''}）】
+   - 本卦体用生克定性：${analysis?.baseRelation || '待定'}
+   - 本卦周易卦辞：《周易》卦辞曰：“${analysis?.baseJudgment || ''}”
+2. 动爻（第 ${hex?.changeLine || '0'} 爻动）：
+   - 权威动爻爻辞：“${analysis?.movingYaoText || ''}”
+3. 互卦（代表事情推进的中途过程与暗流）：【${hex?.mutualName || '待定'}】（上卦${hex?.mutualUpper?.name || ''}${hex?.mutualUpper?.element || ''}，下卦${hex?.mutualLower?.name || ''}${hex?.mutualLower?.element || ''}）
+4. 变卦（代表事情发展的最终结局与归宿）：【${hex?.changeName || '待定'}】
+   - 变卦终局生克定性：${analysis?.changeRelation || '待定'}
+   - 变卦周易卦辞：《周易》卦辞曰：“${analysis?.changeJudgment || ''}”
+
+${rolePrompt}
+
+【当前核心任务：用户就该卦深入追问】
+用户正在就当前的卦象向您进行针对性【深度追问】。
+请以大师口吻，紧扣本卦、互卦、变卦的体用五行生克与动爻爻辞，切中要害地为求测者答疑解惑：
+1. 切勿说空话套话，正面回应用户的追问焦点。
+2. 结合卦象体用生克和动爻，指出最适合的行动契机、转折时机或避坑策略。
+3. 给出具体的时空方位、心理调适或开运化解建议。
+回答请使用清晰优雅的 Markdown 格式。
+`;
+    } else {
+      const qimen = targetItem.qimenInfo;
+      const qAnalysis = qimen ? getQimenDetailedPromptContext(qimen) : null;
+      systemInstruction = `
+你是一位精通中国传统易学数术【奇门遁甲】的殿堂级宗师。
+【重要学术原则：严谨依盘推演，严禁虚构妄断】
+【绝对禁止混淆：不要提及任何梅花易数概念。仅采用奇门遁甲九宫生克、天盘地盘、神星门仪组合生克、值符值使进行预测解盘。】
+
+【奇门遁甲客观排盘核心参考数据】：
+- 时令与格局: ${qimen?.dunInfo || '待定'}
+- 四柱干支: 年柱[${qimen?.bazi?.year || ''}] 月柱[${qimen?.bazi?.month || ''}] 日柱[${qimen?.bazi?.day || ''}] 时柱[${qimen?.bazi?.hour || ''}]
+- 日干（代表求测者自身）: [${qAnalysis?.dayStem || ''}]，落宫: [${qAnalysis?.dayPalace?.name || ''}${qAnalysis?.dayPalace?.direction || ''}（五行属${qAnalysis?.dayPalace?.element || ''}），临${qAnalysis?.dayPalace?.gate || ''}、${qAnalysis?.dayPalace?.star || ''}、${qAnalysis?.dayPalace?.god || ''}]
+- 时干（代表所求测之事体）: [${qAnalysis?.hourStem || ''}]，落宫: [${qAnalysis?.hourPalace?.name || ''}${qAnalysis?.hourPalace?.direction || ''}（五行属${qAnalysis?.hourPalace?.element || ''}），临${qAnalysis?.hourPalace?.gate || ''}、${qAnalysis?.hourPalace?.star || ''}、${qAnalysis?.hourPalace?.god || ''}]
+- 值符: ${qimen?.zhifuStar || ''}落[${qAnalysis?.zhifuPalace?.name || ''}]；值使: ${qimen?.zhishiGate || ''}落[${qAnalysis?.zhishiPalace?.name || ''}]
+- 三吉门落位: 开门在[${qAnalysis?.kaiPalace?.name || ''}]，休门在[${qAnalysis?.xiuPalace?.name || ''}]，生门在[${qAnalysis?.shengPalace?.name || ''}]
+- 九宫全盘明细: ${JSON.stringify(qimen?.palaces || [])}
+
+${rolePrompt}
+
+【当前核心任务：用户就该奇门局深入追问】
+用户正在就当前的奇门遁甲盘面对您进行针对性【深度追问】。
+请以大师口吻，紧扣日干时干落宫生克、值符值使、吉凶门星与神煞格局，切中要害地为求测者答疑解惑：
+1. 切勿说空话套话，正面回应用户的追问焦点。
+2. 结合奇门盘面吉凶神星门仪，指出最适合的行动契机、转折时机或避坑策略。
+3. 给出具体的时空方位、心理调适或开运化解建议。
+回答请使用清晰优雅的 Markdown 格式。
+`;
+    }
+
+    const userMsgId = Math.random().toString(36).substr(2, 9);
+    const assistantMsgId = Math.random().toString(36).substr(2, 9);
+
+    const newUserMsg: FollowUpMessage = {
+      id: userMsgId,
+      role: 'user',
+      content: question.trim(),
+      timestamp: Date.now()
+    };
+
+    const newAssistantMsg: FollowUpMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    };
+
+    const existingFollowUps = targetItem.followUps || [];
+    const updatedFollowUps = [...existingFollowUps, newUserMsg, newAssistantMsg];
+
+    const inProgressItem: DivinationHistoryItem = {
+      ...targetItem,
+      followUps: updatedFollowUps
+    };
+
+    // Immediate UI & storage persistence
+    setSelectedHistory(inProgressItem);
+    setHistoryList(prev => prev.map(h => h.id === targetItem.id ? inProgressItem : h));
+    const interimHistory = historyList.map(h => h.id === targetItem.id ? inProgressItem : h);
+    localStorage.setItem("divination_history", JSON.stringify(interimHistory));
+    setFollowUpLoading(true);
+
+    try {
+      const openai = new OpenAI({
+        baseURL: "https://api.deepseek.com",
+        apiKey: apiKey,
+        dangerouslyAllowBrowser: true
+      });
+
+      const actualModel = getDeepSeekActualModel(model);
+      const isReasoner = actualModel === "deepseek-reasoner";
+
+      // Build chat message history for multi-turn context
+      const chatMessages: any[] = [
+        { role: "system", content: systemInstruction },
+        { 
+          role: "user", 
+          content: `【起卦求测事宜】: ${targetItem.query}\n【起卦时空时令】: ${targetItem.timeContext}\n请先为我做出第一阶段卦象盘局解析。` 
+        },
+        { 
+          role: "assistant", 
+          content: targetItem.result 
+        }
+      ];
+
+      // Append prior follow-up conversation turns
+      for (const msg of existingFollowUps) {
+        chatMessages.push({
+          role: msg.role,
+          content: msg.content
+        });
+      }
+
+      // Append current user follow-up
+      chatMessages.push({
+        role: "user",
+        content: question.trim()
+      });
+
+      const stream: any = await openai.chat.completions.create({
+        model: actualModel,
+        messages: chatMessages,
+        stream: true,
+        temperature: 0.6,
+        ...(isReasoner ? {
+          thinking: { type: "enabled" },
+          reasoning_effort: "high",
+        } : {})
+      } as any);
+
+      let accumulated = "";
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || "";
+        accumulated += delta;
+
+        const liveFollowUps = updatedFollowUps.map(m => 
+          m.id === assistantMsgId ? { ...m, content: accumulated } : m
+        );
+
+        const liveItem: DivinationHistoryItem = {
+          ...targetItem,
+          followUps: liveFollowUps
+        };
+
+        setSelectedHistory(liveItem);
+        setHistoryList(prev => prev.map(h => h.id === targetItem.id ? liveItem : h));
+      }
+
+      const finalFollowUps = updatedFollowUps.map(m => 
+        m.id === assistantMsgId ? { ...m, content: accumulated || "大师已推演此问，天机自在心中。" } : m
+      );
+
+      const finalItem: DivinationHistoryItem = {
+        ...targetItem,
+        followUps: finalFollowUps
+      };
+
+      setSelectedHistory(finalItem);
+      const updatedHistory = historyList.map(h => h.id === targetItem.id ? finalItem : h);
+      setHistoryList(updatedHistory);
+      localStorage.setItem("divination_history", JSON.stringify(updatedHistory));
+
+    } catch (err: any) {
+      alert(`追问推算失败: ${err.message || "未知错误"}`);
+      const failedFollowUps = updatedFollowUps.map(m => 
+        m.id === assistantMsgId ? { ...m, content: m.content || `（推算未能完成: ${err.message || "请求异常"}）` } : m
+      );
+      const failedItem: DivinationHistoryItem = {
+        ...targetItem,
+        followUps: failedFollowUps
+      };
+      setSelectedHistory(failedItem);
+      const updatedHistory = historyList.map(h => h.id === targetItem.id ? failedItem : h);
+      setHistoryList(updatedHistory);
+      localStorage.setItem("divination_history", JSON.stringify(updatedHistory));
+    } finally {
+      setFollowUpLoading(false);
+    }
+  };
+
+  // Clear follow-up conversation history for a specific divination
+  const handleClearFollowUps = (targetItem: DivinationHistoryItem) => {
+    const updatedItem: DivinationHistoryItem = {
+      ...targetItem,
+      followUps: []
+    };
+    setSelectedHistory(updatedItem);
+    const updatedHistory = historyList.map(h => h.id === targetItem.id ? updatedItem : h);
+    setHistoryList(updatedHistory);
+    localStorage.setItem("divination_history", JSON.stringify(updatedHistory));
   };
 
   return (
@@ -605,10 +879,13 @@ ${rolePrompt}
           <HistoryDetailModal 
             item={selectedHistory} 
             loading={loading}
+            followUpLoading={followUpLoading}
             role={role}
             setRole={setRole}
             onClose={() => setSelectedHistory(null)} 
             onInterpret={(chosenRole) => interpretDivination(selectedHistory, chosenRole)}
+            onFollowUp={(question) => handleFollowUp(selectedHistory, question)}
+            onClearFollowUps={() => handleClearFollowUps(selectedHistory)}
           />
         )}
       </AnimatePresence>
@@ -879,24 +1156,26 @@ function SettingsPanel({
             <button
               onClick={() => setChosenModel("deepseek-v4-flash")}
               className={cn(
-                "p-2.5 rounded-xl border text-xs transition-all",
+                "p-2.5 rounded-xl border text-xs transition-all flex flex-col items-center justify-center gap-0.5",
                 chosenModel === "deepseek-v4-flash" 
                   ? "bg-[#FAF9F2] border-[#E6C15C] text-[#967520] font-semibold" 
                   : "bg-white border-gray-200 text-gray-500"
               )}
             >
-              deepseek-v4-flash
+              <span className="font-bold">deepseek-v4-flash</span>
+              <span className="text-[9px] text-[#967520]/80">极速响应 / 推荐</span>
             </button>
             <button
               onClick={() => setChosenModel("deepseek-v4-pro")}
               className={cn(
-                "p-2.5 rounded-xl border text-xs transition-all",
+                "p-2.5 rounded-xl border text-xs transition-all flex flex-col items-center justify-center gap-0.5",
                 chosenModel === "deepseek-v4-pro" 
                   ? "bg-[#FAF9F2] border-[#E6C15C] text-[#967520] font-semibold" 
                   : "bg-white border-gray-200 text-gray-500"
               )}
             >
-              deepseek-v4-pro
+              <span className="font-bold">deepseek-v4-pro</span>
+              <span className="text-[9px] text-gray-400">深度思维推理</span>
             </button>
           </div>
         </div>
@@ -1166,6 +1445,12 @@ function HistoryPanel({
                       <Calendar className="w-3 h-3" />
                       {new Date(item.timestamp).toLocaleString()}
                     </span>
+                    {item.followUps && item.followUps.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 flex items-center gap-1">
+                        <MessageSquare className="w-2.5 h-2.5" />
+                        <span>{Math.floor(item.followUps.length / 2)}条追问</span>
+                      </span>
+                    )}
                   </div>
                   <h4 className="text-sm font-semibold text-gray-800 line-clamp-1 group-hover:text-[#967520] transition-colors">
                     {item.query}
@@ -1195,20 +1480,67 @@ function HistoryPanel({
 function HistoryDetailModal({ 
   item, 
   loading,
+  followUpLoading,
   role,
   setRole,
   onClose,
-  onInterpret
+  onInterpret,
+  onFollowUp,
+  onClearFollowUps
 }: { 
   item: DivinationHistoryItem; 
   loading: boolean;
+  followUpLoading: boolean;
   role: "default" | "sister" | "master";
   setRole: (r: any) => void;
   onClose: () => void;
   onInterpret: (chosenRole: string) => void;
+  onFollowUp: (question: string) => void;
+  onClearFollowUps: () => void;
 }) {
   const [localRole, setLocalRole] = useState<"default" | "sister" | "master">(role);
-  const isInterpreted = item.result && item.result !== "等待解卦中...";
+  const [followUpInput, setFollowUpInput] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const hasResult = Boolean(item.result && item.result !== "等待解卦中...");
+  const showInterpretationSection = hasResult || loading;
+
+  const suggestedQuestions = item.method === "meihua" 
+    ? [
+        "此卦在近期事业或财运上有何关键转机？",
+        "针对动爻指引，我当前最该采取什么具体策略？",
+        "这件事何时会有明确的定局或突破？",
+        "结合体用五行生克，日常如何防范风险与避凶？"
+      ]
+    : [
+        "针对此奇门局，哪个方位对我最为有利？",
+        "日干与时干生克，意味着眼前的最大阻碍是什么？",
+        "三吉门（开、休、生）落位如何指导接下来的决断？",
+        "依据时令节气，此事何时能迎来明显突破？"
+      ];
+
+  const handleCopyText = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => {
+      setCopiedId(null);
+    }, 2000);
+  };
+
+  const submitFollowUp = () => {
+    if (!followUpInput.trim() || followUpLoading || loading) return;
+    const q = followUpInput.trim();
+    setFollowUpInput("");
+    onFollowUp(q);
+  };
+
+  // Auto scroll to latest message when follow-up is added or updated
+  useEffect(() => {
+    if (item.followUps && item.followUps.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [item.followUps, followUpLoading]);
 
   return (
     <motion.div
@@ -1222,26 +1554,37 @@ function HistoryDetailModal({
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 25, stiffness: 350 }}
-        className="bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl border border-gray-200 shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[80vh] overflow-hidden"
+        className="bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl border border-gray-200 shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[85vh] overflow-hidden"
       >
+        {/* Modal Top Header */}
         <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-[#FAF9F6]">
-          <div>
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#E6C15C]/15 text-[#967520] border border-[#E6C15C]/25">
-              {item.method === "meihua" ? "梅花易数卦象" : "奇门遁甲天局"}
-            </span>
+          <div className="flex-1 pr-4">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#E6C15C]/15 text-[#967520] border border-[#E6C15C]/25">
+                {item.method === "meihua" ? "梅花易数卦象" : "奇门遁甲天局"}
+              </span>
+              {item.followUps && item.followUps.length > 0 && (
+                <span className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 flex items-center gap-1">
+                  <MessageSquare className="w-2.5 h-2.5" />
+                  <span>{Math.floor(item.followUps.length / 2)} 轮追问</span>
+                </span>
+              )}
+            </div>
             <h3 className="text-sm font-bold text-gray-800 mt-1 line-clamp-1">
               求测事项: {item.query}
             </h3>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 bg-gray-200/50 hover:bg-gray-200 rounded-full text-gray-500 hover:text-black transition-colors flex items-center justify-center"
+            className="p-2 bg-gray-200/50 hover:bg-gray-200 rounded-full text-gray-500 hover:text-black transition-colors flex items-center justify-center flex-shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-6">
+        {/* Modal Body with smooth scrolling */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {/* Spatio-temporal time context card */}
           <div className="bg-[#FAF9F5] p-4 rounded-2xl border border-gray-200 text-xs space-y-1 font-mono text-gray-500 leading-relaxed shadow-inner">
             <h4 className="text-xs font-bold text-gray-800 mb-2 flex items-center gap-1.5">
               <span className="w-1 h-3 bg-[#E6C15C] rounded-full inline-block" />
@@ -1392,8 +1735,8 @@ function HistoryDetailModal({
             </div>
           )}
 
-          {/* Master Role Cards selection section displayed during interpretation */}
-          {!isInterpreted ? (
+          {/* Master Role Cards selection section or live streamed result */}
+          {!showInterpretationSection ? (
             <div className="space-y-4 pt-2">
               <div className="border-t border-gray-200/60 pt-4">
                 <label className="block text-xs font-bold text-gray-700 mb-2.5">
@@ -1455,25 +1798,249 @@ function HistoryDetailModal({
                   <span className="w-1.5 h-3 bg-[#E6C15C] rounded-full inline-block" />
                   大师解盘妙答 ({item.role === "sister" ? "知心大姐姐" : item.role === "master" ? "国学大师" : "金牌命理师"})
                 </h4>
-                <button
-                  onClick={() => onInterpret(localRole)}
-                  disabled={loading}
-                  className="text-[10px] text-[#967520] hover:underline font-bold flex items-center gap-1"
-                >
-                  {loading ? "重新解卦中..." : "重新解卦"}
-                </button>
+                <div className="flex items-center gap-3">
+                  {hasResult && !loading && (
+                    <button
+                      onClick={() => handleCopyText(item.result, 'main-result')}
+                      className="text-[10px] text-gray-400 hover:text-[#967520] font-semibold flex items-center gap-1 transition-colors"
+                      title="复制完整解卦内容"
+                    >
+                      {copiedId === 'main-result' ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span className="text-emerald-600">已复制</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>复制解卦</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onInterpret(localRole)}
+                    disabled={loading || followUpLoading}
+                    className="text-[10px] text-[#967520] hover:underline font-bold flex items-center gap-1"
+                  >
+                    {loading ? (
+                      <span className="flex items-center gap-1 text-[#967520]">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>正在流式推演中...</span>
+                      </span>
+                    ) : "重新解卦"}
+                  </button>
+                </div>
               </div>
-              <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed bg-[#FAF9F5] p-5 rounded-2xl border border-gray-200/60 shadow-inner">
-                <Markdown>{item.result}</Markdown>
+              
+              <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed bg-[#FAF9F5] p-5 rounded-2xl border border-gray-200/60 shadow-inner min-h-[120px]">
+                {loading && !item.result ? (
+                  <div className="flex flex-col items-center justify-center py-8 space-y-3 text-gray-400">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#967520]" />
+                    <span className="text-xs font-serif text-[#967520]">大师正在凝神推演卦象，请稍候...</span>
+                  </div>
+                ) : (
+                  <div>
+                    <Markdown>{item.result}</Markdown>
+                    {loading && (
+                      <span className="inline-block w-2 h-4 bg-[#967520] animate-pulse ml-1 align-middle" />
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Follow-up Section (Enabled when original result exists) */}
+              {hasResult && !loading && (
+                <div className="border-t border-gray-200/70 pt-6 space-y-5">
+                  {/* Section Title & Reset Action */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-[#E6C15C]/20 border border-[#E6C15C]/40 flex items-center justify-center">
+                        <MessageSquare className="w-3.5 h-3.5 text-[#967520]" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                          卦中深意 · 随心追问
+                          {item.followUps && item.followUps.length > 0 && (
+                            <span className="px-1.5 py-0.5 bg-[#FAF9F2] text-[#967520] border border-[#E6C15C]/30 text-[9px] rounded-full font-bold">
+                              {Math.floor(item.followUps.length / 2)} 轮对话
+                            </span>
+                          )}
+                        </h4>
+                        <p className="text-[10px] text-gray-400">紧扣本卦/天局格局，可随时向大师追问事态演变、抉择方向或化解之法</p>
+                      </div>
+                    </div>
+
+                    {item.followUps && item.followUps.length > 0 && (
+                      <button
+                        onClick={onClearFollowUps}
+                        disabled={followUpLoading}
+                        className="text-[10px] text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1 font-semibold"
+                        title="清空本局追问记录"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>重置追问</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Multi-turn Follow-up Messages Flow */}
+                  {item.followUps && item.followUps.length > 0 && (
+                    <div className="space-y-4 pt-1">
+                      {item.followUps.map((msg, index) => {
+                        const isUser = msg.role === 'user';
+                        return (
+                          <motion.div
+                            key={msg.id || index}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={cn(
+                              "flex gap-2.5 items-start",
+                              isUser ? "flex-row-reverse" : "flex-row"
+                            )}
+                          >
+                            {/* Avatar */}
+                            <div className={cn(
+                              "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs shadow-sm mt-0.5",
+                              isUser 
+                                ? "bg-[#1C1C1E] text-white" 
+                                : "bg-gradient-to-tr from-[#967520] to-[#E6C15C] text-white"
+                            )}>
+                              {isUser ? (
+                                <User className="w-3.5 h-3.5" />
+                              ) : item.role === "sister" ? (
+                                <Heart className="w-3.5 h-3.5" />
+                              ) : item.role === "master" ? (
+                                <User className="w-3.5 h-3.5" />
+                              ) : (
+                                <Award className="w-3.5 h-3.5" />
+                              )}
+                            </div>
+
+                            {/* Speech Bubble */}
+                            <div className={cn(
+                              "max-w-[85%] rounded-2xl p-4 text-xs shadow-sm",
+                              isUser 
+                                ? "bg-[#2C2C2E] text-white rounded-tr-sm" 
+                                : "bg-[#FAF9F5] border border-gray-200/70 text-gray-800 rounded-tl-sm prose prose-sm leading-relaxed"
+                            )}>
+                              {isUser ? (
+                                <p className="whitespace-pre-wrap leading-relaxed m-0">{msg.content}</p>
+                              ) : (
+                                <div>
+                                  {followUpLoading && !msg.content ? (
+                                    <div className="flex items-center gap-2 text-gray-400 py-1">
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#967520]" />
+                                      <span className="text-[11px] text-[#967520] font-serif">大师正在依卦深析，请稍候...</span>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <Markdown>{msg.content}</Markdown>
+                                      {followUpLoading && index === item.followUps!.length - 1 && (
+                                        <span className="inline-block w-1.5 h-3 bg-[#967520] animate-pulse ml-1 align-middle" />
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {msg.content && !followUpLoading && (
+                                    <div className="mt-2.5 pt-2 border-t border-gray-200/40 flex justify-end">
+                                      <button
+                                        onClick={() => handleCopyText(msg.content, msg.id)}
+                                        className="text-[9px] text-gray-400 hover:text-[#967520] flex items-center gap-1 font-semibold transition-colors"
+                                      >
+                                        {copiedId === msg.id ? (
+                                          <>
+                                            <Check className="w-3 h-3 text-emerald-600" />
+                                            <span className="text-emerald-600">已复制</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy className="w-3 h-3" />
+                                            <span>复制回复</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
+
+                  {/* Quick Inspiration Chips */}
+                  <div className="pt-2">
+                    <span className="text-[10px] text-gray-400 block mb-1.5 font-semibold">
+                      💡 快捷追问灵感（点击即可填入）：
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestedQuestions.map((qText, qIdx) => (
+                        <button
+                          key={qIdx}
+                          onClick={() => setFollowUpInput(qText)}
+                          disabled={followUpLoading}
+                          className="text-[10px] bg-white hover:bg-[#FAF9F2] text-gray-600 hover:text-[#967520] border border-gray-200/80 hover:border-[#E6C15C] px-2.5 py-1 rounded-xl transition-all text-left line-clamp-1"
+                        >
+                          {qText}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Chat Input Field & Send Button */}
+                  <div className="pt-1">
+                    <div className="relative bg-[#FAF9F5] rounded-2xl border border-gray-200/80 focus-within:border-[#E6C15C] focus-within:bg-white transition-all shadow-inner p-3">
+                      <textarea
+                        value={followUpInput}
+                        onChange={(e) => setFollowUpInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            submitFollowUp();
+                          }
+                        }}
+                        placeholder="对当前卦象有何追问？输入如：“那我近期适合跳槽吗？”、“具体该如何应对？”..."
+                        rows={2}
+                        disabled={followUpLoading || loading}
+                        className="w-full bg-transparent text-xs text-[#1C1C1E] resize-none focus:outline-none placeholder:text-gray-400 leading-relaxed pr-2"
+                      />
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-200/40 text-[10px] text-gray-400">
+                        <span className="font-mono">按 Enter 键发送 · Shift+Enter 换行</span>
+                        <button
+                          onClick={submitFollowUp}
+                          disabled={!followUpInput.trim() || followUpLoading || loading}
+                          className={cn(
+                            "px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm",
+                            followUpInput.trim() && !followUpLoading && !loading
+                              ? "bg-gradient-to-tr from-[#967520] to-[#E6C15C] text-white hover:opacity-90 cursor-pointer"
+                              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                          )}
+                        >
+                          {followUpLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          <span>{followUpLoading ? "推演中" : "追问"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
+        {/* Modal Bottom Footer */}
         <div className="p-4 border-t border-gray-100 bg-[#FAF9F6] flex justify-end">
           <button
             onClick={onClose}
-            className="bg-gradient-to-tr from-[#967520] to-[#E6C15C] text-white px-6 py-2.5 rounded-xl font-bold text-xs shadow-md"
+            className="bg-gradient-to-tr from-[#967520] to-[#E6C15C] text-white px-6 py-2.5 rounded-xl font-bold text-xs shadow-md hover:opacity-95 transition-opacity"
           >
             合卦闭目
           </button>
