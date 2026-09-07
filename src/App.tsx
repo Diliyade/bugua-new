@@ -686,15 +686,18 @@ ${rolePrompt}
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-[#2C2C2E] font-sans selection:bg-[#E6C15C] selection:text-black pb-28">
       {/* Noble Chinese Ink & Gold Header */}
-      <header className="pt-6 pb-4 px-6 bg-white/95 backdrop-blur-2xl sticky top-0 z-30 border-b border-gray-200/50 shadow-sm">
+      <header className="pt-5 pb-4 px-6 bg-white/95 backdrop-blur-2xl sticky top-0 z-30 border-b border-gray-200/50 shadow-sm">
         <div className="max-w-xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-tr from-[#967520] to-[#E6C15C] p-2.5 rounded-2xl shadow-md shadow-yellow-500/10 flex justify-center items-center">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
+            <img 
+              src="/icon.png" 
+              alt="天机算卦" 
+              className="w-10 h-10 rounded-2xl shadow-sm border border-[#E6C15C]/30 object-cover flex-shrink-0"
+              referrerPolicy="no-referrer"
+            />
             <div>
-              <h1 className="text-xl font-semibold tracking-tight text-[#1C1C1E]">卜卦</h1>
-              <p className="text-[10px] text-[#967520] tracking-widest uppercase font-bold">Zen Ink Divine</p>
+              <h1 className="text-lg font-bold tracking-tight text-[#1C1C1E]">天机算卦</h1>
+              <p className="text-[10px] text-[#967520] tracking-widest uppercase font-bold">Zen Ink Divine · 易经与奇门</p>
             </div>
           </div>
         </div>
@@ -1328,6 +1331,23 @@ function SettingsPanel({
           >
             保存配置
           </button>
+        </div>
+
+        {/* App About & Identity Banner */}
+        <div className="pt-4 border-t border-gray-100 flex items-center gap-3.5 bg-[#FAF9F5] p-3.5 rounded-2xl border border-gray-200/50">
+          <img 
+            src="/icon.png" 
+            alt="天机算卦" 
+            className="w-12 h-12 rounded-xl shadow-sm border border-[#E6C15C]/40 object-cover flex-shrink-0"
+            referrerPolicy="no-referrer"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs font-bold text-gray-800">天机算卦</h4>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[#E6C15C]/20 text-[#967520] font-bold">v2.5</span>
+            </div>
+            <p className="text-[10px] text-gray-400 truncate mt-0.5">易经六十四卦 · 梅花易数 · 奇门遁甲天盘排演</p>
+          </div>
         </div>
       </div>
     </motion.div>
